@@ -29,7 +29,8 @@
             <div class="alert alert-info" role="alert">
               <i class="bi bi-info-circle"></i>
               <strong>Supported formats:</strong> TXT, JPG, JPEG, PNG, GIF, WEBP, DOCX, XLSX, XLS, CSV, PDF<br>
-              <small><strong>Tip:</strong> Files will be merged in the order shown below. The order depends on how you select them in your file browser.</small>
+              <small><strong>Tip:</strong> Files will be merged in the order shown below. The order depends on how you select them in your file browser.</small><br>
+              <small><strong>Mobile users:</strong> Large files (>5MB) are automatically compressed for faster processing.</small>
             </div>
 
             <!-- Upload Form -->
@@ -66,11 +67,19 @@
 
             <!-- Progress -->
             <div id="progressContainer" class="mt-4" style="display: none;">
+              <div class="mb-2">
+                <small id="progressText" class="text-muted">Processing files...</small>
+              </div>
               <div class="progress">
                 <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
                      role="progressbar" style="width: 100%">
                   Converting...
                 </div>
+              </div>
+              <div class="mt-2 text-center">
+                <small class="text-muted">
+                  <i class="bi bi-info-circle"></i> This may take a moment, especially on mobile devices with large files
+                </small>
               </div>
             </div>
 
@@ -201,7 +210,7 @@
     </div>
   </div>
 
- <footer class="mt-5 py-4 bg-light">
+  <footer class="mt-5 py-4 bg-light">
     <div class="container text-center">
       <p class="text-muted mb-0">&copy; 2024 PDF Maker. Built with Node.js, Express, and Bootstrap.</p>
       <p class="text-muted mb-0">Created by <strong>Shishir Adhikari</strong></p>
