@@ -1,419 +1,344 @@
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { PDFDocument, rgb } = require('pdf-lib');
-const sharp = require('sharp');
-const mammoth = require('mammoth');
-const xlsx = require('xlsx');
+// Get DOM elements first
+const fileInput = document.getElementById('fileInput');
+const uploadForm = document.getElementById('uploadForm');
 
-const app = express();
-const PORT = 3000;
+// File management
+let selectedFilesArray = [];
+let currentDownloadUrl = '';
+let currentFileName = '';
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = 'uploads';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir);
+// Form submission
+uploadForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  
+  // Use reordered files array instead of file input
+  const files = selectedFilesArray.length > 0 ? selectedFilesArray : Array.from(fileInput.files);
+  
+  if (!files || files.length === 0) {
+    showError('Please select at least one file to convert.');
+    return;
+  }
+  
+  // Validate file sizes (50MB each)
+  for (let i = 0; i < files.length; i++) {
+    if (files[i].size > 50 * 1024 * 1024) {
+      showError(`File "${files[i].name}" exceeds 50MB limit.`);
+      return;
     }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname);
   }
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { 
-    fileSize: 50 * 1024 * 1024, // 50MB limit
-    files: 20 // Max 20 files
-  }
-});
-
-// Middleware
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use('/downloads', express.static('downloads'));
-app.use(express.urlencoded({ extended: true }));
-
-// Increase timeout for processing large files (5 minutes)
-app.use((req, res, next) => {
-  req.setTimeout(300000); // 5 minutes
-  res.setTimeout(300000);
-  next();
-});
-
-// Create necessary directories
-['uploads', 'downloads'].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir);
-  }
-});
-
-// Routes
-app.get('/', (req, res) => {
-  res.render('index');
-});
-
-app.post('/upload', upload.array('files', 20), async (req, res) => {
+  
+  // Show progress
+  showProgress();
+  hideError();
+  hideResult();
+  
+  // Create FormData with files in the correct order
+  const formData = new FormData();
+  console.log('Sending files in order:');
+  files.forEach((file, index) => {
+    console.log(`  ${index + 1}. ${file.name}`);
+    formData.append('files', file);
+  });
+  
   try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: 'No files uploaded' });
-    }
-
-    // Debug: Log received file order
-    console.log('Files received in order:');
-    req.files.forEach((file, index) => {
-      console.log(`  ${index + 1}. ${file.originalname}`);
+    const response = await fetch('/upload', {
+      method: 'POST',
+      body: formData
     });
-
-    const outputFileName = `${Date.now()}-converted.pdf`;
-    const outputPath = path.join('downloads', outputFileName);
-
-    // Create a new PDF document that will contain all files
-    const finalPdfDoc = await PDFDocument.create();
-
-    // Process each uploaded file IN ORDER
-    for (let i = 0; i < req.files.length; i++) {
-      const file = req.files[i];
-      const progress = Math.round(((i + 1) / req.files.length) * 100);
-      console.log(`Processing file ${i + 1}/${req.files.length} (${progress}%): ${file.originalname}`);
-      
-      try {
-        const filePath = file.path;
-        const fileExt = path.extname(file.originalname).toLowerCase();
-
-        let pdfBytes;
-        
-        switch (fileExt) {
-          case '.txt':
-            pdfBytes = await convertTextToPdf(filePath);
-            break;
-          case '.jpg':
-          case '.jpeg':
-          case '.png':
-          case '.gif':
-          case '.webp':
-            pdfBytes = await convertImageToPdf(filePath);
-            break;
-          case '.docx':
-            pdfBytes = await convertDocxToPdf(filePath);
-            break;
-          case '.xlsx':
-          case '.xls':
-            pdfBytes = await convertExcelToPdf(filePath);
-            break;
-          case '.csv':
-            pdfBytes = await convertCsvToPdf(filePath);
-            break;
-          case '.pdf':
-            // If it's already a PDF, just read it
-            pdfBytes = fs.readFileSync(filePath);
-            break;
-          default:
-            console.warn(`Skipping unsupported file type: ${fileExt} (${file.originalname})`);
-            continue;
-        }
-
-        // Load the converted PDF and copy its pages
-        const pdfDoc = await PDFDocument.load(pdfBytes);
-        const copiedPages = await finalPdfDoc.copyPages(pdfDoc, pdfDoc.getPageIndices());
-        copiedPages.forEach((page) => finalPdfDoc.addPage(page));
-
-        // Clean up individual file
-        fs.unlinkSync(filePath);
-
-      } catch (error) {
-        console.error(`Error processing ${file.originalname}:`, error);
-        // Clean up file and continue with other files
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
-        }
-      }
+    
+    const data = await response.json();
+    
+    if (response.ok && data.success) {
+      showResult(data);
+    } else {
+      showError(data.error || 'Failed to convert files.');
     }
-
-    // Check if we have any pages
-    if (finalPdfDoc.getPageCount() === 0) {
-      return res.status(400).json({ 
-        error: 'No valid files could be converted. Supported formats: txt, jpg, jpeg, png, gif, webp, docx, xlsx, xls, csv, pdf' 
-      });
-    }
-
-    // Save the final merged PDF
-    const finalPdfBytes = await finalPdfDoc.save();
-    fs.writeFileSync(outputPath, finalPdfBytes);
-
-    const fileNames = req.files.map(f => f.originalname).join(', ');
-
-    res.json({
-      success: true,
-      downloadUrl: `/downloads/${outputFileName}`,
-      fileName: outputFileName,
-      originalName: fileNames,
-      fileCount: req.files.length
-    });
-
   } catch (error) {
-    console.error('Conversion error:', error);
-    
-    // Clean up files on error
-    if (req.files) {
-      req.files.forEach(file => {
-        if (fs.existsSync(file.path)) {
-          fs.unlinkSync(file.path);
-        }
-      });
-    }
-    
-    res.status(500).json({ 
-      error: 'Failed to convert files to PDF', 
-      details: error.message 
-    });
+    showError('Network error. Please try again.');
+    console.error('Upload error:', error);
+  } finally {
+    hideProgress();
   }
 });
 
-// Conversion functions
-
-async function convertTextToPdf(filePath) {
-  const text = fs.readFileSync(filePath, 'utf8');
-  const pdfDoc = await PDFDocument.create();
+function showProgress() {
+  const progressContainer = document.getElementById('progressContainer');
+  const progressText = document.getElementById('progressText');
+  const fileCount = selectedFilesArray.length > 0 ? selectedFilesArray.length : fileInput.files.length;
   
-  const lines = text.split('\n');
-  let page = pdfDoc.addPage([612, 792]); // Letter size
-  let y = 750;
-  const lineHeight = 15;
-  const margin = 50;
-  const maxWidth = 512;
-
-  for (const line of lines) {
-    if (y < 50) {
-      page = pdfDoc.addPage([612, 792]);
-      y = 750;
-    }
-    
-    page.drawText(line.substring(0, 100), {
-      x: margin,
-      y: y,
-      size: 12,
-      color: rgb(0, 0, 0),
-    });
-    
-    y -= lineHeight;
-  }
-
-  return await pdfDoc.save();
+  progressText.textContent = `Processing ${fileCount} file${fileCount > 1 ? 's' : ''}... Please wait.`;
+  progressContainer.style.display = 'block';
+  document.getElementById('convertBtn').disabled = true;
 }
 
-async function convertImageToPdf(filePath) {
-  // Get file stats to determine optimization level
-  const stats = fs.statSync(filePath);
-  const fileSizeMB = stats.size / (1024 * 1024);
+function hideProgress() {
+  document.getElementById('progressContainer').style.display = 'none';
+  document.getElementById('convertBtn').disabled = false;
+}
+
+function showError(message) {
+  const errorAlert = document.getElementById('errorAlert');
+  const errorMessage = document.getElementById('errorMessage');
+  errorMessage.textContent = message;
+  errorAlert.style.display = 'block';
+  errorAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideError() {
+  document.getElementById('errorAlert').style.display = 'none';
+}
+
+function showResult(data) {
+  const resultContainer = document.getElementById('resultContainer');
+  const downloadLink = document.getElementById('downloadLink');
+  const originalFileName = document.getElementById('originalFileName');
+  const pdfFileName = document.getElementById('pdfFileName');
+  const fileCount = document.getElementById('fileCount');
   
-  // Optimize based on file size - larger files get more compression
-  let maxWidth, quality;
-  if (fileSizeMB > 5) {
-    maxWidth = 800;   // Heavy compression for large files
-    quality = 75;
-  } else if (fileSizeMB > 2) {
-    maxWidth = 1000;  // Medium compression
-    quality = 80;
+  currentDownloadUrl = data.downloadUrl;
+  currentFileName = data.fileName;
+  
+  originalFileName.textContent = data.originalName;
+  pdfFileName.textContent = data.fileName;
+  fileCount.textContent = data.fileCount || 1;
+  downloadLink.href = data.downloadUrl;
+  downloadLink.download = data.fileName;
+  
+  resultContainer.style.display = 'block';
+  document.getElementById('shareOptions').style.display = 'none';
+  resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function hideResult() {
+  document.getElementById('resultContainer').style.display = 'none';
+}
+
+function resetForm() {
+  uploadForm.reset();
+  hideResult();
+  hideError();
+  document.getElementById('fileList').style.display = 'none';
+  document.getElementById('fileListItems').innerHTML = '';
+  document.getElementById('orderWarning').style.display = 'none';
+  selectedFilesArray = [];
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// File input change
+fileInput.addEventListener('change', (e) => {
+  const files = e.target.files;
+  const fileList = document.getElementById('fileList');
+  
+  if (files.length > 0) {
+    selectedFilesArray = Array.from(files);
+    renderFileList();
+    fileList.style.display = 'block';
+    
+    if (files.length > 1) {
+      document.getElementById('orderWarning').style.display = 'block';
+    } else {
+      document.getElementById('orderWarning').style.display = 'none';
+    }
+    
+    console.log(`Selected ${files.length} file(s)`);
   } else {
-    maxWidth = 1200;  // Light compression for small files
-    quality = 85;
+    fileList.style.display = 'none';
+    document.getElementById('orderWarning').style.display = 'none';
+    selectedFilesArray = [];
   }
-  
-  // Convert image to JPEG using sharp and handle EXIF orientation
-  const imageBuffer = await sharp(filePath)
-    .rotate() // Auto-rotate based on EXIF orientation
-    .resize(maxWidth, null, { 
-      fit: 'inside', 
-      withoutEnlargement: true,
-      kernel: sharp.kernel.lanczos3 // Fast, good quality scaling
-    })
-    .jpeg({ 
-      quality: quality,
-      progressive: true, // Faster encoding
-      mozjpeg: true // Use mozjpeg for better compression
-    })
-    .toBuffer();
-
-  const pdfDoc = await PDFDocument.create();
-  const image = await pdfDoc.embedJpg(imageBuffer);
-  
-  const { width, height } = image.scale(1);
-  
-  // Standard page sizes for portrait
-  const pageWidth = 612;  // 8.5 inches
-  const pageHeight = 792; // 11 inches (Letter size)
-  
-  // Calculate scaling to fit portrait page
-  let imgWidth, imgHeight;
-  
-  // Check if image is landscape (wider than tall)
-  if (width > height) {
-    // Rotate landscape images to portrait by swapping dimensions
-    const aspectRatio = height / width;
-    imgWidth = pageWidth - 40; // 20px margin on each side
-    imgHeight = imgWidth * aspectRatio;
-    
-    // If height exceeds page, scale down
-    if (imgHeight > pageHeight - 40) {
-      imgHeight = pageHeight - 40;
-      imgWidth = imgHeight / aspectRatio;
-    }
-  } else {
-    // Portrait or square image
-    const aspectRatio = height / width;
-    imgWidth = pageWidth - 40;
-    imgHeight = imgWidth * aspectRatio;
-    
-    // If height exceeds page, scale down
-    if (imgHeight > pageHeight - 40) {
-      imgHeight = pageHeight - 40;
-      imgWidth = imgHeight / aspectRatio;
-    }
-  }
-  
-  // Center the image on the page
-  const x = (pageWidth - imgWidth) / 2;
-  const y = (pageHeight - imgHeight) / 2;
-  
-  const page = pdfDoc.addPage([pageWidth, pageHeight]);
-  page.drawImage(image, {
-    x: x,
-    y: y,
-    width: imgWidth,
-    height: imgHeight,
-  });
-
-  return await pdfDoc.save();
-}
-
-async function convertDocxToPdf(filePath) {
-  const result = await mammoth.extractRawText({ path: filePath });
-  const text = result.value;
-  
-  const pdfDoc = await PDFDocument.create();
-  const lines = text.split('\n');
-  let page = pdfDoc.addPage([612, 792]);
-  let y = 750;
-  const lineHeight = 15;
-  const margin = 50;
-
-  for (const line of lines) {
-    if (y < 50) {
-      page = pdfDoc.addPage([612, 792]);
-      y = 750;
-    }
-    
-    const displayLine = line.trim().substring(0, 100);
-    if (displayLine) {
-      page.drawText(displayLine, {
-        x: margin,
-        y: y,
-        size: 12,
-        color: rgb(0, 0, 0),
-      });
-    }
-    
-    y -= lineHeight;
-  }
-
-  return await pdfDoc.save();
-}
-
-async function convertExcelToPdf(filePath) {
-  const workbook = xlsx.readFile(filePath);
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const data = xlsx.utils.sheet_to_json(sheet, { header: 1 });
-
-  const pdfDoc = await PDFDocument.create();
-  let page = pdfDoc.addPage([792, 612]); // Landscape for tables
-  let y = 560;
-  const lineHeight = 15;
-  const margin = 50;
-
-  // Add sheet name as title
-  page.drawText(`Sheet: ${sheetName}`, {
-    x: margin,
-    y: y,
-    size: 14,
-    color: rgb(0, 0, 0),
-  });
-  y -= 30;
-
-  for (const row of data) {
-    if (y < 50) {
-      page = pdfDoc.addPage([792, 612]);
-      y = 560;
-    }
-    
-    const rowText = row.map(cell => String(cell || '')).join(' | ').substring(0, 120);
-    page.drawText(rowText, {
-      x: margin,
-      y: y,
-      size: 10,
-      color: rgb(0, 0, 0),
-    });
-    
-    y -= lineHeight;
-  }
-
-  return await pdfDoc.save();
-}
-
-async function convertCsvToPdf(filePath) {
-  const csvContent = fs.readFileSync(filePath, 'utf8');
-  const rows = csvContent.split('\n').map(row => row.split(','));
-
-  const pdfDoc = await PDFDocument.create();
-  let page = pdfDoc.addPage([792, 612]);
-  let y = 560;
-  const lineHeight = 15;
-  const margin = 50;
-
-  for (const row of rows) {
-    if (y < 50) {
-      page = pdfDoc.addPage([792, 612]);
-      y = 560;
-    }
-    
-    const rowText = row.join(' | ').substring(0, 120);
-    page.drawText(rowText, {
-      x: margin,
-      y: y,
-      size: 10,
-      color: rgb(0, 0, 0),
-    });
-    
-    y -= lineHeight;
-  }
-
-  return await pdfDoc.save();
-}
-
-// Clean up old files periodically
-setInterval(() => {
-  const cleanupDirs = ['uploads', 'downloads'];
-  const maxAge = 60 * 60 * 1000; // 1 hour
-
-  cleanupDirs.forEach(dir => {
-    if (fs.existsSync(dir)) {
-      const files = fs.readdirSync(dir);
-      files.forEach(file => {
-        const filePath = path.join(dir, file);
-        const stats = fs.statSync(filePath);
-        if (Date.now() - stats.mtimeMs > maxAge) {
-          fs.unlinkSync(filePath);
-        }
-      });
-    }
-  });
-}, 30 * 60 * 1000); // Run every 30 minutes
-
-app.listen(PORT, () => {
-  console.log(`PDF Maker server running on http://localhost:${PORT}`);
 });
+
+function renderFileList() {
+  const fileListItems = document.getElementById('fileListItems');
+  fileListItems.innerHTML = '';
+  
+  selectedFilesArray.forEach((file, index) => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between align-items-center';
+    li.draggable = true;
+    li.dataset.index = index;
+    li.innerHTML = `
+      <span>
+        <i class="bi bi-grip-vertical text-muted me-2"></i>
+        <span class="file-number">${index + 1}.</span>
+        <i class="bi bi-file-earmark"></i> ${file.name}
+      </span>
+      <span class="badge bg-secondary">${formatFileSize(file.size)}</span>
+    `;
+    
+    li.addEventListener('dragstart', handleDragStart);
+    li.addEventListener('dragover', handleDragOver);
+    li.addEventListener('drop', handleDropItem);
+    li.addEventListener('dragenter', handleDragEnter);
+    li.addEventListener('dragleave', handleDragLeave);
+    li.addEventListener('dragend', handleDragEnd);
+    
+    fileListItems.appendChild(li);
+  });
+}
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Drag and drop reordering
+let draggedElement = null;
+
+function handleDragStart(e) {
+  draggedElement = this;
+  this.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(e) {
+  if (e.preventDefault) e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  return false;
+}
+
+function handleDragEnter(e) {
+  if (this !== draggedElement) {
+    this.classList.add('drag-over');
+  }
+}
+
+function handleDragLeave(e) {
+  this.classList.remove('drag-over');
+}
+
+function handleDropItem(e) {
+  if (e.stopPropagation) e.stopPropagation();
+  this.classList.remove('drag-over');
+  
+  if (draggedElement !== this) {
+    const draggedIndex = parseInt(draggedElement.dataset.index);
+    const targetIndex = parseInt(this.dataset.index);
+    const draggedFile = selectedFilesArray[draggedIndex];
+    selectedFilesArray.splice(draggedIndex, 1);
+    selectedFilesArray.splice(targetIndex, 0, draggedFile);
+    renderFileList();
+  }
+  return false;
+}
+
+function handleDragEnd(e) {
+  this.classList.remove('dragging');
+  document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+}
+
+function reverseFileOrder() {
+  selectedFilesArray.reverse();
+  renderFileList();
+  showToast('File order reversed!', 'success');
+}
+
+function viewPDF() {
+  window.open(getFullUrl(), '_blank');
+  showToast('Opening PDF...', 'info');
+}
+
+// Drag and drop file upload
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+  uploadForm.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
+});
+
+uploadForm.addEventListener('drop', (e) => {
+  const files = e.dataTransfer.files;
+  if (files.length > 0) {
+    fileInput.files = files;
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}, false);
+
+// Share functions
+function toggleShareOptions() {
+  const shareOptions = document.getElementById('shareOptions');
+  shareOptions.style.display = shareOptions.style.display === 'none' ? 'block' : 'none';
+}
+
+function getFullUrl() {
+  return window.location.origin + currentDownloadUrl;
+}
+
+function shareViaWhatsApp() {
+  const url = getFullUrl();
+  const text = `Check out this PDF: ${currentFileName}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text + ' ' + url)}`, '_blank');
+}
+
+function shareViaMessenger() {
+  window.location.href = `fb-messenger://share?link=${encodeURIComponent(getFullUrl())}`;
+  showToast('Opening Messenger...', 'info');
+}
+
+function shareViaGmail() {
+  const url = getFullUrl();
+  const subject = encodeURIComponent('PDF Document');
+  const body = encodeURIComponent(`Hi,\n\nCheck out this PDF:\n${currentFileName}\n${url}`);
+  window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${subject}&body=${body}`, '_blank');
+}
+
+function shareViaTelegram() {
+  const url = getFullUrl();
+  const text = `Check out this PDF: ${currentFileName}`;
+  window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`, '_blank');
+}
+
+function shareViaEmail() {
+  const url = getFullUrl();
+  const subject = encodeURIComponent('PDF Document');
+  const body = encodeURIComponent(`Hi,\n\nCheck out this PDF:\n${currentFileName}\n${url}`);
+  window.location.href = `mailto:?subject=${subject}&body=${body}`;
+}
+
+function shareViaTwitter() {
+  const url = getFullUrl();
+  const text = `Check out this PDF: ${currentFileName}`;
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
+}
+
+function shareViaLinkedIn() {
+  window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(getFullUrl())}`, '_blank');
+}
+
+async function copyShareLink() {
+  const url = getFullUrl();
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast('Link copied!', 'success');
+  } catch (err) {
+    const textArea = document.createElement('textarea');
+    textArea.value = url;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      showToast('Link copied!', 'success');
+    } catch (err) {
+      showToast('Failed to copy', 'error');
+    }
+    document.body.removeChild(textArea);
+  }
+}
+
+function showToast(message, type = 'info') {
+  const toastContainer = document.createElement('div');
+  toastContainer.className = 'toast-notification';
+  const bgClass = type === 'success' ? 'bg-success' : type === 'error' ? 'bg-danger' : 'bg-info';
+  
+  toastContainer.innerHTML = `
+    <div class="alert ${bgClass} text-white alert-dismissible fade show" role="alert">
+      <strong>${type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ'}</strong> ${message}
+      <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+    </div>
+  `;
+  
+  document.body.appendChild(toastContainer);
+  setTimeout(() => toastContainer.remove(), 4000);
+}

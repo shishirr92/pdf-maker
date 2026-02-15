@@ -8,7 +8,7 @@ const mammoth = require('mammoth');
 const xlsx = require('xlsx');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -229,13 +229,11 @@ async function convertImageToPdf(filePath) {
     .rotate() // Auto-rotate based on EXIF orientation
     .resize(maxWidth, null, { 
       fit: 'inside', 
-      withoutEnlargement: true,
-      kernel: sharp.kernel.lanczos3 // Fast, good quality scaling
+      withoutEnlargement: true
     })
     .jpeg({ 
       quality: quality,
-      progressive: true, // Faster encoding
-      mozjpeg: true // Use mozjpeg for better compression
+      progressive: true // Faster encoding
     })
     .toBuffer();
 
