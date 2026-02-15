@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Maker - Convert Files to PDF</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary">
+    <div class="container">
+      <a class="navbar-brand" href="/">
+        <i class="bi bi-file-earmark-pdf-fill"></i>
+        PDF Maker
+      </a>
+    </div>
+  </nav>
+
+  <div class="container mt-5">
+    <div class="row justify-content-center">
+      <div class="col-md-8">
+        <div class="card shadow-lg">
+          <div class="card-header bg-primary text-white">
+            <h4 class="mb-0"><i class="bi bi-cloud-upload"></i> Convert Files to PDF</h4>
+          </div>
+          <div class="card-body">
+            <div class="alert alert-info" role="alert">
+              <i class="bi bi-info-circle"></i>
+              <strong>Supported formats:</strong> TXT, JPG, JPEG, PNG, GIF, WEBP, DOCX, XLSX, XLS, CSV, PDF<br>
+              <small><strong>Tip:</strong> Files will be merged in the order shown below. The order depends on how you select them in your file browser.</small>
+            </div>
+
+            <!-- Upload Form -->
+            <form id="uploadForm" enctype="multipart/form-data">
+              <div class="mb-4">
+                <label for="fileInput" class="form-label">Choose files to convert</label>
+                <input class="form-control form-control-lg" type="file" id="fileInput" name="files" multiple required>
+                <div class="form-text">Select one or multiple files (max 20 files, 50MB each). All files will be merged into one PDF.</div>
+              </div>
+
+              <!-- File List Display -->
+              <div id="fileList" class="mb-3" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h6 class="mb-0"><i class="bi bi-list-ol"></i> Selected Files (drag to reorder):</h6>
+                  <button type="button" class="btn btn-sm btn-outline-primary" onclick="reverseFileOrder()">
+                    <i class="bi bi-arrow-down-up"></i> Reverse Order
+                  </button>
+                </div>
+                <ul id="fileListItems" class="list-group file-list-sortable"></ul>
+                <small class="text-muted">Drag and drop files to change order, or click "Reverse Order" to flip the list</small>
+              </div>
+
+              <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-primary btn-lg" id="convertBtn">
+                  <i class="bi bi-arrow-repeat"></i> Convert to PDF
+                </button>
+              </div>
+              
+              <div class="alert alert-warning mt-3" role="alert" style="display: none;" id="orderWarning">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <strong>Check file order!</strong> If the files appear in reverse order, click the "Reverse Order" button above before converting.
+              </div>
+            </form>
+
+            <!-- Progress -->
+            <div id="progressContainer" class="mt-4" style="display: none;">
+              <div class="progress">
+                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" style="width: 100%">
+                  Converting...
+                </div>
+              </div>
+            </div>
+
+            <!-- Error Alert -->
+            <div id="errorAlert" class="alert alert-danger mt-4" role="alert" style="display: none;">
+              <i class="bi bi-exclamation-triangle-fill"></i>
+              <span id="errorMessage"></span>
+            </div>
+
+            <!-- Success Result -->
+            <div id="resultContainer" class="mt-4" style="display: none;">
+              <div class="alert alert-success" role="alert">
+                <i class="bi bi-check-circle-fill"></i>
+                <strong>Success!</strong> Your PDF is ready for download. (<span id="fileCount"></span> file(s) converted)
+              </div>
+              
+              <div class="card">
+                <div class="card-body">
+                  <h5 class="card-title"><i class="bi bi-file-earmark-pdf"></i> Converted PDF</h5>
+                  <p class="card-text">
+                    <strong>Original file:</strong> <span id="originalFileName"></span><br>
+                    <strong>PDF file:</strong> <span id="pdfFileName"></span>
+                  </p>
+                  <div class="d-grid gap-2">
+                    <div class="row g-2">
+                      <div class="col-md-6">
+                        <a id="downloadLink" href="#" class="btn btn-success btn-lg w-100" download>
+                          <i class="bi bi-download"></i> Download PDF
+                        </a>
+                      </div>
+                      <div class="col-md-6">
+                        <button id="viewBtn" class="btn btn-info btn-lg w-100" onclick="viewPDF()">
+                          <i class="bi bi-eye-fill"></i> View PDF
+                        </button>
+                      </div>
+                    </div>
+                    <button class="btn btn-primary btn-lg" onclick="toggleShareOptions()">
+                      <i class="bi bi-share-fill"></i> Share
+                    </button>
+                    
+                    <!-- Share Options -->
+                    <div id="shareOptions" class="share-options mt-3" style="display: none;">
+                      <div class="row g-2">
+                        <div class="col-6 col-md-3">
+                          <button class="btn btn-outline-success w-100" onclick="shareViaWhatsApp()">
+                            <i class="bi bi-whatsapp"></i> WhatsApp
+                          </button>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <button class="btn btn-outline-primary w-100" onclick="shareViaMessenger()">
+                            <i class="bi bi-messenger"></i> Messenger
+                          </button>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <button class="btn btn-outline-danger w-100" onclick="shareViaGmail()">
+                            <i class="bi bi-envelope-fill"></i> Gmail
+                          </button>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <button class="btn btn-outline-info w-100" onclick="shareViaTelegram()">
+                            <i class="bi bi-telegram"></i> Telegram
+                          </button>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <button class="btn btn-outline-secondary w-100" onclick="shareViaEmail()">
+                            <i class="bi bi-envelope"></i> Email
+                          </button>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <button class="btn btn-outline-dark w-100" onclick="copyShareLink()">
+                            <i class="bi bi-link-45deg"></i> Copy Link
+                          </button>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <button class="btn btn-outline-info w-100" onclick="shareViaTwitter()">
+                            <i class="bi bi-twitter-x"></i> Twitter
+                          </button>
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <button class="btn btn-outline-primary w-100" onclick="shareViaLinkedIn()">
+                            <i class="bi bi-linkedin"></i> LinkedIn
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <button class="btn btn-outline-secondary" onclick="resetForm()">
+                      <i class="bi bi-arrow-counterclockwise"></i> Convert Another File
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Features Section -->
+        <div class="row mt-5">
+          <div class="col-md-4 mb-3">
+            <div class="card h-100 text-center">
+              <div class="card-body">
+                <i class="bi bi-lightning-charge text-primary" style="font-size: 2rem;"></i>
+                <h5 class="card-title mt-2">Fast Conversion</h5>
+                <p class="card-text">Convert your files to PDF in seconds</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4 mb-3">
+            <div class="card h-100 text-center">
+              <div class="card-body">
+                <i class="bi bi-shield-check text-success" style="font-size: 2rem;"></i>
+                <h5 class="card-title mt-2">Secure</h5>
+                <p class="card-text">Files are automatically deleted after 1 hour</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4 mb-3">
+            <div class="card h-100 text-center">
+              <div class="card-body">
+                <i class="bi bi-file-earmark-text text-info" style="font-size: 2rem;"></i>
+                <h5 class="card-title mt-2">Multiple Formats</h5>
+                <p class="card-text">Support for images, documents, and spreadsheets</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+ <footer class="mt-5 py-4 bg-light">
+    <div class="container text-center">
+      <p class="text-muted mb-0">&copy; 2024 PDF Maker. Built with Node.js, Express, and Bootstrap.</p>
+      <p class="text-muted mb-0">Created by <strong>Shishir Adhikari</strong></p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-attachment: fixed;
+}
+
+.container {
+  flex: 1;
+}
+
+.card {
+  border-radius: 15px;
+  border: none;
+}
+
+.card-header {
+  border-radius: 15px 15px 0 0 !important;
+}
+
+.btn-lg {
+  padding: 12px 24px;
+  font-size: 1.1rem;
+  border-radius: 8px;
+}
+
+.progress {
+  height: 30px;
+  border-radius: 8px;
+}
+
+.progress-bar {
+  font-size: 1rem;
+  line-height: 30px;
+}
+
+footer {
+  margin-top: auto;
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.navbar-brand {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.card.h-100 {
+  transition: transform 0.2s;
+}
+
+.card.h-100:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+#fileInput {
+  cursor: pointer;
+}
+
+#fileInput:hover {
+  border-color: #0d6efd;
+}
+
+.alert {
+  border-radius: 10px;
+}
+
+#resultContainer .card {
+  border: 2px solid #198754;
+  background-color: #f8f9fa;
+}
+
+#fileList {
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#fileListItems .list-group-item {
+  border-left: 3px solid #0d6efd;
+}
+
+#fileListItems .list-group-item:hover {
+  background-color: #f8f9fa;
+}
+
+.file-list-sortable .list-group-item {
+  cursor: move;
+  user-select: none;
+  transition: all 0.2s ease;
+}
+
+.file-list-sortable .list-group-item:hover {
+  background-color: #e9ecef;
+  transform: scale(1.02);
+}
+
+.file-list-sortable .list-group-item.dragging {
+  opacity: 0.5;
+  background-color: #dee2e6;
+}
+
+.file-list-sortable .list-group-item.drag-over {
+  border-top: 3px solid #0d6efd;
+}
+
+.file-number {
+  display: inline-block;
+  min-width: 30px;
+  font-weight: bold;
+  color: #0d6efd;
+}
+
+.share-options {
+  animation: slideDown 0.3s ease-out;
+  border-top: 2px solid #dee2e6;
+  padding-top: 15px;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.share-options .btn {
+  font-size: 0.9rem;
+  padding: 10px;
+}
+
+.share-options .btn i {
+  font-size: 1.2rem;
+}
+
+.share-options .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+}
+
+.toast-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
