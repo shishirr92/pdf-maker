@@ -19,7 +19,7 @@ Text: TXT
 Docs: DOCX
 Sheets: XLSX, XLS, CSV
 PDFs (merge)
-🚀 Run locally
+ Run locally
 git clone <your-repo-url>
 cd pdf-maker
 npm install
